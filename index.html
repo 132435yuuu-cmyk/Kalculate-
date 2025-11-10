@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf‑8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CalCute – 인터넷 연동 칼로리 계산기</title>
+  <style>
+    body { font-family: sans‑serif; background:#f3fff9; color:#2f4a3f; padding:20px; }
+    .container { max-width:800px; margin:auto; background:#fff; padding:20px; border-radius:12px; box-shadow:0 8px 20px rgba(0,0,0,0.05); }
+    input, button { padding:10px; font-size:16px; }
+    .foodRow { display:flex; gap:10px; margin-top:10px; }
+    .foodRow input.qty { width:80px; }
+    .foodList { margin-top:20px; }
+    .summary { margin-top:20px; font‑weight:bold; font-size:18px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>CalCute 인터넷 연동 버전</h1>
+    <p>검색하여 음식 데이터를 자동으로 가져와 칼로리를 계산해요.</p>
+
+    <div>
+      <input id="foodSearch" type="text" placeholder="음식명 입력 (예: banana, rice)" />
+      <button id="searchBtn">검색</button>
+    </div>
+
+    <div class="foodList" id="foodList"></div>
+
+    <div class="summary" id="summary">총 칼로리: ‑ kcal</div>
+  </div>
+
+  <script>
+    const API_KEY = 'YOUR_API_KEY_HERE';  // 여기에 본인의 API 키 입력
+    const BASE_URL = 'https://api.nal.usda.gov/fdc/v1';
+
+    let meals = [];
+
+    document.getElementById('searchBtn').addEventListener('click', async () => {
+      const query = document.getElementById('foodSearch').value.trim();
+      if(!query) return alert('음식명을 입력해주세요.');
+      try {
+        const searchRes = await fetch(`${BASE_URL}/foods/search?api_key=${API_KEY}&query=${encodeURIComponent(query)}&pageSize=5`);
+        const searchData = await searchRes.json();
+        if(!searchData.foods || searchData.foods.length === 0) {
+          alert('검색 결과가 없습니다.');
+          return;
+        }
+        const food = searchData.foods[0];
+        // 음식 상세정보 받아오기
+        const detailsRes = await fetch(`${BASE_URL}/food/${food.fdcId}?api_key=${API_KEY}`);
+        const details = await detailsRes.json();
+        // 필요한 영양소: kcal, 탄수화물, 단백질, 지방
+        const nutrients = details.foodNutrients;
+        const kcalObj = nutrients.find(n=>n.name.toLowerCase().includes('energy')) || {amount:0};
+        const carbObj = nutrients.find(n=>n.name.toLowerCase().includes('carbohydrate')) || {amount:0};
+        const proteinObj = nutrients.find(n=>n.name.toLowerCase().includes('protein')) || {amount:0};
+        const fatObj = nutrients.find(n=>n.name.toLowerCase().includes('fat')) || {amount:0};
+
+        const item = {
+          name: details.description,
+          kcal: kcalObj.amount,
+          carb: carbObj.amount,
+          protein: proteinObj.amount,
+          fat: fatObj.amount,
+          qty: 100  // 기본 100g
+        };
+        meals.push(item);
+        renderMeals();
+        updateSummary();
+      } catch(err) {
+        console.error(err);
+        alert('데이터를 가져오는 중 오류가 발생했습니다.');
+      }
+    });
+
+    function renderMeals(){
+      const listEl = document.getElementById('foodList');
+      listEl.innerHTML = '';
+      meals.forEach((m,i)=>{
+        const row = document.createElement('div');
+        row.className='foodRow';
+        row.innerHTML = `
+          <span>${m.name}</span> ‑ 100g당 ${m.kcal} kcal
+          <input class="qty" type="number" value="${m.qty}" data‑idx="${i}" /> g
+          <button data‑idx="${i}">삭제</button>
+        `;
+        listEl.appendChild(row);
+      });
+      document.querySelectorAll('.qty').forEach(inp=>{
+        inp.addEventListener('change',e=>{
+          const idx = e.target.dataset.idx;
+          meals[idx].qty = Number(e.target.value) || 0;
+          updateSummary();
+        });
+      });
+      document.querySelectorAll('.foodRow button').forEach(btn=>{
+        btn.addEventListener('click',e=>{
+          const idx = e.target.dataset.idx;
+          meals.splice(idx,1);
+          renderMeals();
+          updateSummary();
+        });
+      });
+    }
+
+    function updateSummary(){
+      let total = 0;
+      meals.forEach(m=>{
+        total += m.kcal * (m.qty/100);
+      });
+      document.getElementById('summary').textContent = `총 칼로리: ${total.toFixed(1)} kcal`;
+    }
+  </script>
+</body>
+</html>
